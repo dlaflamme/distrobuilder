@@ -11,6 +11,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -31,7 +32,7 @@ func NewCentOSHTTP() *CentOSHTTP {
 // Run downloads the tarball and unpacks it.
 func (s *CentOSHTTP) Run(definition shared.Definition, rootfsDir string) error {
 	baseURL := fmt.Sprintf("%s/%s/isos/%s/", definition.Source.URL,
-		strings.Split(definition.Image.Release, ".")[0],
+		definition.Image.Release,
 		definition.Image.ArchitectureMapped)
 
 	s.fname = s.getRelease(definition.Source.URL, definition.Image.Release,
@@ -159,8 +160,7 @@ func (s CentOSHTTP) unpack(filePath, rootfsDir string) error {
 }
 
 func (s CentOSHTTP) getRelease(URL, release, variant, arch string) string {
-	releaseFields := strings.Split(release, ".")
-	resp, err := http.Get(URL + path.Join("/", releaseFields[0], "isos", arch))
+	resp, err := http.Get(URL + path.Join("/", release, "isos", arch))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ""
@@ -173,10 +173,26 @@ func (s CentOSHTTP) getRelease(URL, release, variant, arch string) string {
 		return ""
 	}
 
+	releaseFields := strings.Split(release, ".")
+
 	var re string
-	if len(releaseFields) > 1 {
-		re = fmt.Sprintf("CentOS-%s.%s-%s-(?i:%s)(-\\d+)?.iso",
-			releaseFields[0], releaseFields[1], arch, variant)
+
+	if len(releaseFields) == 3 {
+		re = fmt.Sprintf("CentOS-%s-%s-(?i:%s)-%s.iso",
+			releaseFields[0], arch, variant, releaseFields[2])
+	} else if len(releaseFields) == 2 {
+		majorVersion, err := strconv.Atoi(releaseFields[0])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return ""
+		}
+		if majorVersion >= 7 {
+			re = fmt.Sprintf("CentOS-%s-%s-(?i:%s)(-\\d+)?.iso",
+				releaseFields[0], arch, variant)
+		} else {
+			re = fmt.Sprintf("CentOS-%s.%s-%s-(?i:%s)(-\\d+)?.iso",
+				releaseFields[0], releaseFields[1], arch, variant)
+		}
 	} else {
 		re = fmt.Sprintf("CentOS-%s(.\\d+)?-%s-(?i:%s)(-\\d+)?.iso",
 			releaseFields[0], arch, variant)
